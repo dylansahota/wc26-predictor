@@ -28,8 +28,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Find deadline — kickoff of the first match of the day
-  const deadline = matches.length > 0 ? matches[0].kickoff_utc : null
+  // Deadline = 1 hour before first kickoff of the day
+  const deadline = matches.length > 0
+    ? new Date(new Date(matches[0].kickoff_utc).getTime() - 60 * 60 * 1000).toISOString()
+    : null
   const now = new Date()
   const deadlinePassed = deadline ? now > new Date(deadline) : false
 

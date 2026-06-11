@@ -42,6 +42,7 @@ export default function PredictPage() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [justSubmitted, setJustSubmitted] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -95,16 +96,12 @@ export default function PredictPage() {
   }
 
   async function handleSubmit() {
+    // Treat empty inputs as 0 — allows leaving unchanged scores as-is
     const predictions = matches.map(m => ({
       match_id: m.id,
-      home_score: parseInt(myPredictions[m.id]?.home ?? ''),
-      away_score: parseInt(myPredictions[m.id]?.away ?? ''),
+      home_score: parseInt(myPredictions[m.id]?.home || '0'),
+      away_score: parseInt(myPredictions[m.id]?.away || '0'),
     }))
-
-    if (predictions.some(p => isNaN(p.home_score) || isNaN(p.away_score))) {
-      setError('Fill in all scores before submitting')
-      return
-    }
 
     setSubmitting(true)
     setError('')
@@ -122,8 +119,22 @@ export default function PredictPage() {
       return
     }
 
+    // Update local state to reflect submitted 0s
+    setMyPredictions(prev => {
+      const updated = { ...prev }
+      predictions.forEach(p => {
+        updated[p.match_id] = {
+          home: p.home_score.toString(),
+          away: p.away_score.toString(),
+        }
+      })
+      return updated
+    })
+
     setSubmitted(true)
+    setJustSubmitted(true)
     setSubmitting(false)
+    setTimeout(() => setJustSubmitted(false), 3000)
   }
 
   function getOthersForMatch(matchId: number) {
@@ -268,20 +279,21 @@ export default function PredictPage() {
               </p>
             )}
             <button
-              onClick={handleSubmit}
+              onClick={justSubmitted ? undefined : handleSubmit}
               disabled={submitting}
               style={{
                 width: '100%', padding: '14px',
-                background: submitted ? '#14532d' : '#4ade80',
-                border: submitted ? '0.5px solid #4ade80' : 'none',
+                background: justSubmitted ? '#14532d' : submitted ? 'none' : '#4ade80',
+                border: submitted && !justSubmitted ? '0.5px solid #374151' : justSubmitted ? '0.5px solid #4ade80' : 'none',
                 borderRadius: '10px',
-                color: submitted ? '#4ade80' : '#0f1117',
+                color: justSubmitted ? '#4ade80' : submitted ? '#9ca3af' : '#0f1117',
                 fontSize: '15px', fontWeight: 500,
-                cursor: submitting ? 'not-allowed' : 'pointer',
+                cursor: submitting || justSubmitted ? 'default' : 'pointer',
                 fontFamily: 'inherit',
+                transition: 'all 0.2s ease',
               }}
             >
-              {submitting ? 'Submitting...' : submitted ? 'Predictions saved — update?' : 'Submit predictions'}
+              {submitting ? 'Submitting...' : justSubmitted ? '✓ Submitted' : submitted ? 'Update predictions' : 'Submit predictions'}
             </button>
           </>
         )}

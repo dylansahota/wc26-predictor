@@ -29,11 +29,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Matches not found' }, { status: 404 })
   }
 
-  // Find the earliest kickoff for this day — that's the deadline
+  // Deadline = 1 hour before the earliest kickoff of the day
   const earliest = matches.reduce((a, b) =>
     new Date(a.kickoff_utc) < new Date(b.kickoff_utc) ? a : b
   )
-  const deadline = new Date(earliest.kickoff_utc)
+  const deadline = new Date(new Date(earliest.kickoff_utc).getTime() - 60 * 60 * 1000)
 
   if (new Date() > deadline) {
     return NextResponse.json({ error: 'Deadline passed' }, { status: 403 })
