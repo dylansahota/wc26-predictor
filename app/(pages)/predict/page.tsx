@@ -213,35 +213,42 @@ export default function PredictPage() {
                     : 'No pick submitted'}
                 </div>
               ) : (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                  <input
-                    type="number"
-                    min={0} max={20}
-                    value={myPredictions[match.id]?.home ?? ''}
-                    onChange={e => updateScore(match.id, 'home', e.target.value)}
-                    placeholder="0"
-                    style={{
-                      width: '44px', height: '44px',
-                      background: '#0f1117', border: '0.5px solid #374151',
-                      borderRadius: '8px', color: '#fff', fontSize: '20px',
-                      fontWeight: 500, textAlign: 'center', fontFamily: 'inherit', outline: 'none',
-                    }}
-                  />
-                  <span style={{ fontSize: '18px', color: '#4b5563' }}>–</span>
-                  <input
-                    type="number"
-                    min={0} max={20}
-                    value={myPredictions[match.id]?.away ?? ''}
-                    onChange={e => updateScore(match.id, 'away', e.target.value)}
-                    placeholder="0"
-                    style={{
-                      width: '44px', height: '44px',
-                      background: '#0f1117', border: '0.5px solid #374151',
-                      borderRadius: '8px', color: '#fff', fontSize: '20px',
-                      fontWeight: 500, textAlign: 'center', fontFamily: 'inherit', outline: 'none',
-                    }}
-                  />
-                </div>
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                    <input
+                      type="number"
+                      min={0} max={20}
+                      value={myPredictions[match.id]?.home ?? ''}
+                      onChange={e => updateScore(match.id, 'home', e.target.value)}
+                      placeholder="0"
+                      style={{
+                        width: '44px', height: '44px',
+                        background: '#0f1117', border: '0.5px solid #374151',
+                        borderRadius: '8px', color: '#fff', fontSize: '20px',
+                        fontWeight: 500, textAlign: 'center', fontFamily: 'inherit', outline: 'none',
+                      }}
+                    />
+                    <span style={{ fontSize: '18px', color: '#4b5563' }}>–</span>
+                    <input
+                      type="number"
+                      min={0} max={20}
+                      value={myPredictions[match.id]?.away ?? ''}
+                      onChange={e => updateScore(match.id, 'away', e.target.value)}
+                      placeholder="0"
+                      style={{
+                        width: '44px', height: '44px',
+                        background: '#0f1117', border: '0.5px solid #374151',
+                        borderRadius: '8px', color: '#fff', fontSize: '20px',
+                        fontWeight: 500, textAlign: 'center', fontFamily: 'inherit', outline: 'none',
+                      }}
+                    />
+                  </div>
+                  {submitted && myPredictions[match.id] && (
+                    <div style={{ textAlign: 'center', fontSize: '11px', color: '#4ade80', marginTop: '8px' }}>
+                      ✓ saved {myPredictions[match.id].home}–{myPredictions[match.id].away}
+                    </div>
+                  )}
+                </>
               )}
 
               {deadlinePassed && others.length > 0 && (

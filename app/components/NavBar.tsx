@@ -2,7 +2,7 @@
 
 import { useRouter, usePathname } from 'next/navigation'
 
-const tabs = [
+const BASE_TABS = [
   { label: 'Predict', path: '/predict' },
   { label: 'Leaderboard', path: '/leaderboard' },
   { label: 'History', path: '/history' },
@@ -11,6 +11,9 @@ const tabs = [
 export default function NavBar({ playerName }: { playerName: string }) {
   const router = useRouter()
   const pathname = usePathname()
+  const tabs = playerName === 'Dyl'
+    ? [...BASE_TABS, { label: 'Admin', path: '/admin' }]
+    : BASE_TABS
 
   async function handleLogout() {
     await fetch('/api/auth', { method: 'DELETE' })

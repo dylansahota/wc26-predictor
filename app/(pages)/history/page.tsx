@@ -4,13 +4,11 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import NavBar from '@/app/components/NavBar'
 
-interface Prediction {
-  match_id: number
-  home_score: number
-  away_score: number
-  points: number | null
+interface PlayerSlot {
   player_id: number
-  players: { name: string; colour: string }
+  name: string
+  colour: string
+  prediction: { home_score: number; away_score: number; points: number | null } | null
 }
 
 interface Match {
@@ -19,12 +17,13 @@ interface Match {
   away_team: string
   home_flag: string
   away_flag: string
-  home_score: number
-  away_score: number
+  home_score: number | null
+  away_score: number | null
   kickoff_utc: string
   et_date: string
   stage: string
-  predictions: Prediction[]
+  status: string
+  predictions: PlayerSlot[]
 }
 
 interface Group {
@@ -95,46 +94,50 @@ export default function HistoryPage() {
           groups.map(group => (
             <div key={group.et_date} style={{ marginBottom: '24px' }}>
               <div style={{
-                fontSize: '11px',
-                color: '#6b7280',
-                textTransform: 'uppercase',
-                letterSpacing: '0.8px',
-                marginBottom: '10px',
-                fontWeight: 500,
+                fontSize: '11px', color: '#6b7280',
+                textTransform: 'uppercase', letterSpacing: '0.8px',
+                marginBottom: '10px', fontWeight: 500,
               }}>
                 {formatDate(group.et_date)}
               </div>
 
-              {group.matches.map(match => (
-                <div key={match.id} style={{
-                  background: '#181c24',
-                  border: '0.5px solid #2a2f3d',
-                  borderRadius: '12px',
-                  padding: '14px 16px',
-                  marginBottom: '10px',
-                }}>
-                  {/* Teams + result */}
-                  <div style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
-                    <div style={{ flex: 1 }}>
-                      <span style={{ fontSize: '20px', display: 'block' }}>{match.home_flag}</span>
-                      <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }}>{match.home_team}</div>
-                    </div>
-                    <div style={{ textAlign: 'center', padding: '0 12px' }}>
-                      <div style={{ fontSize: '20px', fontWeight: 600, color: '#4ade80', letterSpacing: '2px' }}>
-                        {match.home_score} – {match.away_score}
+              {group.matches.map(match => {
+                const finished = match.status === 'finished'
+                return (
+                  <div key={match.id} style={{
+                    background: '#181c24',
+                    border: '0.5px solid #2a2f3d',
+                    borderRadius: '12px',
+                    padding: '14px 16px',
+                    marginBottom: '10px',
+                  }}>
+                    {/* Teams + result */}
+                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '10px' }}>
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontSize: '20px', display: 'block' }}>{match.home_flag}</span>
+                        <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px' }}>{match.home_team}</div>
                       </div>
-                      <div style={{ fontSize: '10px', color: '#4b5563', marginTop: '2px' }}>
-                        {formatKickoff(match.kickoff_utc)}
+                      <div style={{ textAlign: 'center', padding: '0 12px' }}>
+                        {finished ? (
+                          <div style={{ fontSize: '20px', fontWeight: 600, color: '#4ade80', letterSpacing: '2px' }}>
+                            {match.home_score} – {match.away_score}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: '13px', fontWeight: 500, color: '#6b7280', letterSpacing: '1px' }}>
+                            TBC
+                          </div>
+                        )}
+                        <div style={{ fontSize: '10px', color: '#4b5563', marginTop: '2px' }}>
+                          {formatKickoff(match.kickoff_utc)}
+                        </div>
+                      </div>
+                      <div style={{ flex: 1, textAlign: 'right' }}>
+                        <span style={{ fontSize: '20px', display: 'block', textAlign: 'right' }}>{match.away_flag}</span>
+                        <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px', textAlign: 'right' }}>{match.away_team}</div>
                       </div>
                     </div>
-                    <div style={{ flex: 1, textAlign: 'right' }}>
-                      <span style={{ fontSize: '20px', display: 'block', textAlign: 'right' }}>{match.away_flag}</span>
-                      <div style={{ fontSize: '12px', color: '#9ca3af', marginTop: '2px', textAlign: 'right' }}>{match.away_team}</div>
-                    </div>
-                  </div>
 
-                  {/* Predictions grid */}
-                  {match.predictions.length > 0 && (
+                    {/* Predictions grid — all 4 players always shown */}
                     <div style={{
                       background: '#0f1117',
                       border: '0.5px solid #2a2f3d',
@@ -145,10 +148,10 @@ export default function HistoryPage() {
                         Predictions
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
-                        {match.predictions.map((pred, i) => {
-                          const correct = pred.points === 1
+                        {match.predictions.map(slot => {
+                          const correct = finished && slot.prediction?.points === 1
                           return (
-                            <div key={i} style={{
+                            <div key={slot.player_id} style={{
                               display: 'flex',
                               justifyContent: 'space-between',
                               alignItems: 'center',
@@ -159,29 +162,33 @@ export default function HistoryPage() {
                             }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 <div style={{
-                                  width: '6px',
-                                  height: '6px',
+                                  width: '6px', height: '6px',
                                   borderRadius: '50%',
-                                  background: pred.players.colour,
+                                  background: slot.colour,
                                   flexShrink: 0,
                                 }} />
-                                <span style={{ fontSize: '12px', color: '#9ca3af' }}>{pred.players.name}</span>
+                                <span style={{ fontSize: '12px', color: '#9ca3af' }}>{slot.name}</span>
                               </div>
-                              <span style={{
-                                fontSize: '13px',
-                                fontWeight: 500,
-                                color: correct ? '#4ade80' : '#6b7280',
-                              }}>
-                                {pred.home_score}–{pred.away_score}
-                              </span>
+                              {slot.prediction ? (
+                                <span style={{
+                                  fontSize: '13px', fontWeight: 500,
+                                  color: correct ? '#4ade80' : '#6b7280',
+                                }}>
+                                  {slot.prediction.home_score}–{slot.prediction.away_score}
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: '12px', color: '#374151', fontStyle: 'italic' }}>
+                                  N/A
+                                </span>
+                              )}
                             </div>
                           )
                         })}
                       </div>
                     </div>
-                  )}
-                </div>
-              ))}
+                  </div>
+                )
+              })}
             </div>
           ))
         )}
