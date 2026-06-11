@@ -31,6 +31,14 @@ interface OtherPrediction {
   players: { name: string; colour: string }
 }
 
+interface TeamFormEntry {
+  opponent: string
+  opponentFlag: string
+  goalsFor: number
+  goalsAgainst: number
+  result: 'W' | 'D' | 'L'
+}
+
 export default function PredictPage() {
   const router = useRouter()
   const [playerName, setPlayerName] = useState('')
@@ -39,6 +47,7 @@ export default function PredictPage() {
   const [otherPredictions, setOtherPredictions] = useState<OtherPrediction[]>([])
   const [deadline, setDeadline] = useState<Date | null>(null)
   const [deadlinePassed, setDeadlinePassed] = useState(false)
+  const [teamForms, setTeamForms] = useState<Record<string, TeamFormEntry[]>>({})
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -71,6 +80,7 @@ export default function PredictPage() {
       setDeadline(data.deadline ? new Date(data.deadline) : null)
       setDeadlinePassed(data.deadlinePassed)
       setOtherPredictions(data.otherPredictions)
+      setTeamForms(data.teamForms ?? {})
 
       // Pre-fill my predictions
       const preds: Record<number, { home: string; away: string }> = {}
@@ -190,15 +200,52 @@ export default function PredictPage() {
               marginBottom: '10px',
               opacity: deadlinePassed ? 0.8 : 1,
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: '12px' }}>
+                {/* Home team + form */}
                 <div style={{ flex: 1 }}>
                   <span style={{ fontSize: '22px', display: 'block' }}>{match.home_flag}</span>
-                  <div style={{ fontSize: '12px', color: '#9ca3af' }}>{match.home_team}</div>
+                  <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '4px' }}>{match.home_team}</div>
+                  {(teamForms[match.home_team] ?? []).map((r, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                      <span style={{
+                        fontSize: '9px', fontWeight: 700, borderRadius: '3px', padding: '1px 3px',
+                        color: r.result === 'W' ? '#4ade80' : r.result === 'D' ? '#f59e0b' : '#ef4444',
+                        background: r.result === 'W' ? '#14532d' : r.result === 'D' ? '#78350f' : '#450a0a',
+                      }}>{r.result}</span>
+                      <span style={{ fontSize: '10px', color: '#6b7280' }}>{r.goalsFor}–{r.goalsAgainst} {r.opponentFlag}</span>
+                    </div>
+                  ))}
                 </div>
-                <div style={{ fontSize: '11px', color: '#4b5563', padding: '0 8px' }}>vs</div>
+
+                {/* Center: KO time + vs + venue */}
+                <div style={{ textAlign: 'center', padding: '0 8px', paddingTop: '2px', flexShrink: 0 }}>
+                  <div style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                    {new Date(match.kickoff_utc).toLocaleTimeString('en-GB', {
+                      timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
+                    })}
+                  </div>
+                  <div style={{ fontSize: '10px', color: '#4b5563', marginTop: '2px' }}>vs</div>
+                  {(match as any).venue && (
+                    <div style={{ fontSize: '9px', color: '#4b5563', marginTop: '3px', whiteSpace: 'nowrap' }}>
+                      📍 {(match as any).venue}
+                    </div>
+                  )}
+                </div>
+
+                {/* Away team + form */}
                 <div style={{ flex: 1, textAlign: 'right' }}>
                   <span style={{ fontSize: '22px', display: 'block', textAlign: 'right' }}>{match.away_flag}</span>
-                  <div style={{ fontSize: '12px', color: '#9ca3af' }}>{match.away_team}</div>
+                  <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '4px' }}>{match.away_team}</div>
+                  {(teamForms[match.away_team] ?? []).map((r, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', marginTop: '2px' }}>
+                      <span style={{ fontSize: '10px', color: '#6b7280' }}>{r.opponentFlag} {r.goalsFor}–{r.goalsAgainst}</span>
+                      <span style={{
+                        fontSize: '9px', fontWeight: 700, borderRadius: '3px', padding: '1px 3px',
+                        color: r.result === 'W' ? '#4ade80' : r.result === 'D' ? '#f59e0b' : '#ef4444',
+                        background: r.result === 'W' ? '#14532d' : r.result === 'D' ? '#78350f' : '#450a0a',
+                      }}>{r.result}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
 

@@ -4,6 +4,7 @@ import { useRouter, usePathname } from 'next/navigation'
 
 const BASE_TABS = [
   { label: 'Predict', path: '/predict' },
+  { label: 'Groups', path: '/groups' },
   { label: 'Leaderboard', path: '/leaderboard' },
   { label: 'History', path: '/history' },
 ]

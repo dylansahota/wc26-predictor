@@ -54,11 +54,41 @@ export async function GET(req: NextRequest) {
     otherPredictions = data ?? []
   }
 
+  // Build team form from all finished WC26 matches
+  const todayTeams = [...new Set(matches.flatMap(m => [m.home_team, m.away_team]))]
+  const teamForms: Record<string, Array<{
+    opponent: string; opponentFlag: string
+    goalsFor: number; goalsAgainst: number
+    result: 'W' | 'D' | 'L'
+  }>> = {}
+
+  if (todayTeams.length > 0) {
+    const { data: finished } = await supabaseAdmin
+      .from('matches')
+      .select('home_team, away_team, home_flag, away_flag, home_score, away_score')
+      .eq('status', 'finished')
+      .order('kickoff_utc', { ascending: true })
+
+    for (const m of finished ?? []) {
+      const processTeam = (team: string, gf: number, ga: number, oppTeam: string, oppFlag: string) => {
+        if (!todayTeams.includes(team)) return
+        if (!teamForms[team]) teamForms[team] = []
+        teamForms[team].push({
+          opponent: oppTeam, opponentFlag: oppFlag, goalsFor: gf, goalsAgainst: ga,
+          result: gf > ga ? 'W' : gf < ga ? 'L' : 'D',
+        })
+      }
+      processTeam(m.home_team, m.home_score, m.away_score, m.away_team, m.away_flag)
+      processTeam(m.away_team, m.away_score, m.home_score, m.home_team, m.home_flag)
+    }
+  }
+
   return NextResponse.json({
     matches,
     deadline,
     deadlinePassed,
     myPredictions: myPredictions ?? [],
     otherPredictions,
+    teamForms,
   })
 }

@@ -100,7 +100,7 @@ export async function GET(req: NextRequest) {
     scored.push(match.id)
   }
 
-  // Refresh team names for all scheduled matches (knockout pairings update as tournament progresses)
+  // Refresh team names + venue for all scheduled matches
   const teamUpdates: number[] = []
   for (const match of scheduledMatches ?? []) {
     const fdMatch = fdById.get(match.fd_id)
@@ -108,15 +108,18 @@ export async function GET(req: NextRequest) {
 
     const homeTeam = fdMatch.homeTeam?.name
     const awayTeam = fdMatch.awayTeam?.name
-    if (!homeTeam || !awayTeam) continue
-    if (homeTeam === match.home_team && awayTeam === match.away_team) continue
+    const venue = fdMatch.venue ?? null
+    const updates: Record<string, any> = {}
 
-    await supabaseAdmin
-      .from('matches')
-      .update({ home_team: homeTeam, away_team: awayTeam })
-      .eq('id', match.id)
+    if (homeTeam && awayTeam && (homeTeam !== match.home_team || awayTeam !== match.away_team)) {
+      updates.home_team = homeTeam
+      updates.away_team = awayTeam
+    }
+    if (venue && venue !== (match as any).venue) updates.venue = venue
+    if (Object.keys(updates).length === 0) continue
 
-    teamUpdates.push(match.id)
+    await supabaseAdmin.from('matches').update(updates).eq('id', match.id)
+    if (updates.home_team) teamUpdates.push(match.id)
   }
 
   return NextResponse.json({ scored, teamUpdates, etDate })
