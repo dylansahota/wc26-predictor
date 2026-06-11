@@ -4,20 +4,49 @@ import { getSession } from '@/lib/auth'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   const session = await getSession()
   if (!session) {
     return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
   }
 
-  const { searchParams } = new URL(req.url)
-  const date = searchParams.get('date') // ET date string e.g. '2026-06-12'
+  const now = new Date()
 
-  if (!date) {
-    return NextResponse.json({ error: 'Date required' }, { status: 400 })
+  // Compute today's ET date
+  const etNow = now.toLocaleDateString('en-US', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+  })
+  const [em, ed, ey] = etNow.split('/')
+  let date = `${ey}-${em}-${ed}`
+
+  // Fetch today's scheduled matches to check deadline
+  const { data: todayMatches } = await supabaseAdmin
+    .from('matches')
+    .select('kickoff_utc')
+    .eq('et_date', date)
+    .eq('status', 'scheduled')
+    .order('kickoff_utc', { ascending: true })
+    .limit(1)
+
+  const todayDeadline = todayMatches && todayMatches.length > 0
+    ? new Date(new Date(todayMatches[0].kickoff_utc).getTime() - 60 * 60 * 1000)
+    : null
+  const todayLocked = !todayDeadline || now > todayDeadline
+
+  // If today is locked (or has no scheduled matches), advance to the next day with scheduled matches
+  if (todayLocked) {
+    const { data: next } = await supabaseAdmin
+      .from('matches')
+      .select('et_date')
+      .eq('status', 'scheduled')
+      .gt('et_date', date)
+      .order('et_date', { ascending: true })
+      .limit(1)
+      .single()
+    if (next) date = next.et_date
   }
 
-  // Fetch matches for the given ET date
+  // Fetch all matches for the active date (any status, so finished ones show scores)
   const { data: matches, error } = await supabaseAdmin
     .from('matches')
     .select('*')
@@ -32,7 +61,6 @@ export async function GET(req: NextRequest) {
   const deadline = matches.length > 0
     ? new Date(new Date(matches[0].kickoff_utc).getTime() - 60 * 60 * 1000).toISOString()
     : null
-  const now = new Date()
   const deadlinePassed = deadline ? now > new Date(deadline) : false
 
   // Fetch this player's predictions for these matches
@@ -87,6 +115,7 @@ export async function GET(req: NextRequest) {
     matches,
     deadline,
     deadlinePassed,
+    activeDate: date,
     myPredictions: myPredictions ?? [],
     otherPredictions,
     teamForms,

@@ -4,6 +4,25 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import NavBar from '@/app/components/NavBar'
 
+const VENUE_INFO: Record<string, { city: string; country: string }> = {
+  'Estadio Azteca':          { city: 'Mexico City',   country: 'Mexico' },
+  'Estadio Akron':           { city: 'Guadalajara',   country: 'Mexico' },
+  'Estadio BBVA':            { city: 'Monterrey',     country: 'Mexico' },
+  'BC Place':                { city: 'Vancouver',     country: 'Canada' },
+  'BMO Field':               { city: 'Toronto',       country: 'Canada' },
+  'MetLife Stadium':         { city: 'New York',      country: 'USA' },
+  'AT&T Stadium':            { city: 'Dallas',        country: 'USA' },
+  'SoFi Stadium':            { city: 'Los Angeles',   country: 'USA' },
+  "Levi's Stadium":          { city: 'San Francisco', country: 'USA' },
+  'Hard Rock Stadium':       { city: 'Miami',         country: 'USA' },
+  'Arrowhead Stadium':       { city: 'Kansas City',   country: 'USA' },
+  'Lumen Field':             { city: 'Seattle',       country: 'USA' },
+  'Lincoln Financial Field': { city: 'Philadelphia',  country: 'USA' },
+  'Gillette Stadium':        { city: 'Boston',        country: 'USA' },
+  'NRG Stadium':             { city: 'Houston',       country: 'USA' },
+  'Mercedes-Benz Stadium':   { city: 'Atlanta',       country: 'USA' },
+}
+
 interface Match {
   id: number
   home_team: string
@@ -47,12 +66,17 @@ export default function PredictPage() {
   const [otherPredictions, setOtherPredictions] = useState<OtherPrediction[]>([])
   const [deadline, setDeadline] = useState<Date | null>(null)
   const [deadlinePassed, setDeadlinePassed] = useState(false)
+  const [matchDate, setMatchDate] = useState<string | null>(null)
   const [teamForms, setTeamForms] = useState<Record<string, TeamFormEntry[]>>({})
+  const [savedPredictions, setSavedPredictions] = useState<Record<number, { home: string; away: string }>>({})
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [justSubmitted, setJustSubmitted] = useState(false)
   const [error, setError] = useState('')
+  const [teamModal, setTeamModal] = useState<{ name: string; flag: string } | null>(null)
+  const [teamModalMatches, setTeamModalMatches] = useState<any[]>([])
+  const [teamModalLoading, setTeamModalLoading] = useState(false)
 
   useEffect(() => {
     async function load() {
@@ -62,23 +86,14 @@ export default function PredictPage() {
       const session = await sessionRes.json()
       setPlayerName(session.name)
 
-      // Get today's ET date
-      const etDate = new Date().toLocaleDateString('en-US', {
-        timeZone: 'America/New_York',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      })
-      const [month, day, year] = etDate.split('/')
-      const dateStr = `${year}-${month}-${day}`
-
-      const res = await fetch(`/api/matches?date=${dateStr}`)
+      const res = await fetch('/api/matches')
       if (!res.ok) { setLoading(false); return }
       const data = await res.json()
 
       setMatches(data.matches)
       setDeadline(data.deadline ? new Date(data.deadline) : null)
       setDeadlinePassed(data.deadlinePassed)
+      setMatchDate(data.activeDate ?? null)
       setOtherPredictions(data.otherPredictions)
       setTeamForms(data.teamForms ?? {})
 
@@ -91,11 +106,22 @@ export default function PredictPage() {
         }
       })
       setMyPredictions(preds)
+      setSavedPredictions(preds)
       if (data.myPredictions.length > 0) setSubmitted(true)
       setLoading(false)
     }
     load()
   }, [router])
+
+  async function openTeamModal(name: string, flag: string) {
+    setTeamModal({ name, flag })
+    setTeamModalMatches([])
+    setTeamModalLoading(true)
+    const res = await fetch(`/api/teams?team=${encodeURIComponent(name)}`)
+    const data = await res.json()
+    setTeamModalMatches(data.matches ?? [])
+    setTeamModalLoading(false)
+  }
 
   function updateScore(matchId: number, side: 'home' | 'away', value: string) {
     const clean = value.replace(/\D/g, '').slice(0, 2)
@@ -130,16 +156,15 @@ export default function PredictPage() {
     }
 
     // Update local state to reflect submitted 0s
-    setMyPredictions(prev => {
-      const updated = { ...prev }
-      predictions.forEach(p => {
-        updated[p.match_id] = {
-          home: p.home_score.toString(),
-          away: p.away_score.toString(),
-        }
-      })
-      return updated
+    const normalized: Record<number, { home: string; away: string }> = {}
+    predictions.forEach(p => {
+      normalized[p.match_id] = {
+        home: p.home_score.toString(),
+        away: p.away_score.toString(),
+      }
     })
+    setMyPredictions(prev => ({ ...prev, ...normalized }))
+    setSavedPredictions(prev => ({ ...prev, ...normalized }))
 
     setSubmitted(true)
     setJustSubmitted(true)
@@ -165,23 +190,42 @@ export default function PredictPage() {
       <NavBar playerName={playerName} />
       <div style={{ padding: '16px' }}>
 
-        {deadline && (
-          <div style={{ marginBottom: '14px' }}>
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: '4px',
-              background: '#1a1f2e', border: '0.5px solid #2a2f3d',
-              borderRadius: '6px', padding: '3px 8px', fontSize: '11px',
-              color: deadlinePassed ? '#ef4444' : '#f59e0b',
-            }}>
-              {deadlinePassed ? 'Deadline passed' : `Locks at ${deadline.toLocaleTimeString('en-GB', {
-                timeZone: 'Europe/London',
-                hour: 'numeric',
-                minute: '2-digit',
-                timeZoneName: 'short',
-              })}`}
+        {matchDate && (() => {
+          const etToday = new Date().toLocaleDateString('en-US', {
+            timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+          })
+          const [m, d, y] = etToday.split('/')
+          const todayStr = `${y}-${m}-${d}`
+          const isToday = matchDate === todayStr
+          const dateLabel = isToday ? null : new Date(matchDate + 'T12:00:00').toLocaleDateString('en-GB', {
+            day: 'numeric', month: 'short',
+          })
+          return (
+            <div style={{ marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              {dateLabel && (
+                <div style={{
+                  display: 'inline-flex', alignItems: 'center',
+                  background: '#1a1f2e', border: '0.5px solid #2a2f3d',
+                  borderRadius: '6px', padding: '3px 8px', fontSize: '11px', color: '#9ca3af',
+                }}>
+                  {dateLabel}
+                </div>
+              )}
+              {deadline && (
+                <div style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '4px',
+                  background: '#1a1f2e', border: '0.5px solid #2a2f3d',
+                  borderRadius: '6px', padding: '3px 8px', fontSize: '11px',
+                  color: deadlinePassed ? '#ef4444' : '#f59e0b',
+                }}>
+                  {deadlinePassed ? 'Deadline passed' : `Locks at ${deadline.toLocaleTimeString('en-GB', {
+                    timeZone: 'Europe/London', hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+                  })}`}
+                </div>
+              )}
             </div>
-          </div>
-        )}
+          )
+        })()}
 
         {matches.length === 0 && (
           <div style={{ color: '#6b7280', fontSize: '14px', textAlign: 'center', marginTop: '40px' }}>
@@ -203,8 +247,14 @@ export default function PredictPage() {
               <div style={{ display: 'flex', alignItems: 'flex-start', marginBottom: '12px' }}>
                 {/* Home team + form */}
                 <div style={{ flex: 1 }}>
-                  <span style={{ fontSize: '22px', display: 'block' }}>{match.home_flag}</span>
-                  <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '4px' }}>{match.home_team}</div>
+                  <span
+                    style={{ fontSize: '22px', display: 'block', cursor: 'pointer' }}
+                    onClick={() => openTeamModal(match.home_team, match.home_flag)}
+                  >{match.home_flag}</span>
+                  <div
+                    style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '4px', cursor: 'pointer', textDecoration: 'underline', textDecorationColor: '#4b5563' }}
+                    onClick={() => openTeamModal(match.home_team, match.home_flag)}
+                  >{match.home_team}</div>
                   {(teamForms[match.home_team] ?? []).map((r, i) => (
                     <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
                       <span style={{
@@ -218,24 +268,36 @@ export default function PredictPage() {
                 </div>
 
                 {/* Center: KO time + vs + venue */}
-                <div style={{ textAlign: 'center', padding: '0 8px', paddingTop: '2px', flexShrink: 0 }}>
+                <div style={{ textAlign: 'center', padding: '0 8px', paddingTop: '2px', flexShrink: 0, maxWidth: '100px' }}>
                   <div style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 500, whiteSpace: 'nowrap' }}>
                     {new Date(match.kickoff_utc).toLocaleTimeString('en-GB', {
                       timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', timeZoneName: 'short',
                     })}
                   </div>
                   <div style={{ fontSize: '10px', color: '#4b5563', marginTop: '2px' }}>vs</div>
-                  {(match as any).venue && (
-                    <div style={{ fontSize: '9px', color: '#4b5563', marginTop: '3px', whiteSpace: 'nowrap' }}>
-                      📍 {(match as any).venue}
-                    </div>
-                  )}
+                  {(match as any).venue && (() => {
+                    const info = VENUE_INFO[(match as any).venue]
+                    return (
+                      <div style={{ marginTop: '4px' }}>
+                        <div style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 500 }}>{(match as any).venue}</div>
+                        {info && (
+                          <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '1px' }}>{info.city}, {info.country}</div>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </div>
 
                 {/* Away team + form */}
                 <div style={{ flex: 1, textAlign: 'right' }}>
-                  <span style={{ fontSize: '22px', display: 'block', textAlign: 'right' }}>{match.away_flag}</span>
-                  <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '4px' }}>{match.away_team}</div>
+                  <span
+                    style={{ fontSize: '22px', display: 'block', textAlign: 'right', cursor: 'pointer' }}
+                    onClick={() => openTeamModal(match.away_team, match.away_flag)}
+                  >{match.away_flag}</span>
+                  <div
+                    style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '4px', cursor: 'pointer', textDecoration: 'underline', textDecorationColor: '#4b5563' }}
+                    onClick={() => openTeamModal(match.away_team, match.away_flag)}
+                  >{match.away_team}</div>
                   {(teamForms[match.away_team] ?? []).map((r, i) => (
                     <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', marginTop: '2px' }}>
                       <span style={{ fontSize: '10px', color: '#6b7280' }}>{r.opponentFlag} {r.goalsFor}–{r.goalsAgainst}</span>
@@ -290,9 +352,9 @@ export default function PredictPage() {
                       }}
                     />
                   </div>
-                  {submitted && myPredictions[match.id] && (
+                  {submitted && savedPredictions[match.id] && (
                     <div style={{ textAlign: 'center', fontSize: '11px', color: '#4ade80', marginTop: '8px' }}>
-                      ✓ saved {myPredictions[match.id].home}–{myPredictions[match.id].away}
+                      ✓ saved {savedPredictions[match.id].home}–{savedPredictions[match.id].away}
                     </div>
                   )}
                 </>
@@ -352,6 +414,60 @@ export default function PredictPage() {
           </>
         )}
       </div>
+      {teamModal && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 50,
+            display: 'flex', alignItems: 'flex-end',
+          }}
+          onClick={() => setTeamModal(null)}
+        >
+          <div
+            style={{
+              background: '#181c24', borderRadius: '16px 16px 0 0', width: '100%',
+              maxHeight: '65vh', overflowY: 'auto', padding: '20px 16px 40px',
+              fontFamily: 'inherit',
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+              <div style={{ fontSize: '40px', lineHeight: 1 }}>{teamModal.flag}</div>
+              <div style={{ fontSize: '16px', fontWeight: 600, color: '#e5e7eb', marginTop: '6px' }}>{teamModal.name}</div>
+            </div>
+
+            {teamModalLoading ? (
+              <div style={{ textAlign: 'center', color: '#6b7280', padding: '24px', fontSize: '13px' }}>Loading...</div>
+            ) : teamModalMatches.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#6b7280', padding: '24px', fontSize: '13px' }}>No results yet</div>
+            ) : (
+              <>
+                <div style={{ fontSize: '10px', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.6px', marginBottom: '8px' }}>Results</div>
+                {teamModalMatches.map((m, i) => (
+                  <div key={i} style={{
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    padding: '9px 0',
+                    borderBottom: i < teamModalMatches.length - 1 ? '0.5px solid #2a2f3d' : 'none',
+                  }}>
+                    <span style={{
+                      fontSize: '10px', fontWeight: 700, borderRadius: '3px', padding: '2px 5px', flexShrink: 0,
+                      color: m.result === 'W' ? '#4ade80' : m.result === 'D' ? '#f59e0b' : '#ef4444',
+                      background: m.result === 'W' ? '#14532d' : m.result === 'D' ? '#78350f' : '#450a0a',
+                    }}>{m.result}</span>
+                    <span style={{ fontSize: '18px', flexShrink: 0 }}>{m.opponentFlag}</span>
+                    <span style={{ fontSize: '13px', color: '#9ca3af', flex: 1 }}>{m.opponent}</span>
+                    <span style={{ fontSize: '13px', fontWeight: 500, color: '#e5e7eb', flexShrink: 0 }}>
+                      {m.goalsFor}–{m.goalsAgainst}
+                    </span>
+                    <span style={{ fontSize: '11px', color: '#4b5563', flexShrink: 0 }}>
+                      {new Date(m.kickoff_utc).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                    </span>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </main>
   )
 }

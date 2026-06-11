@@ -32,10 +32,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: matchError.message }, { status: 500 })
   }
 
-  // Also fetch all scheduled matches so we can refresh knockout team names
+  // Also fetch all scheduled matches so we can refresh knockout team names + group_name
   const { data: scheduledMatches } = await supabaseAdmin
     .from('matches')
-    .select('id, fd_id, home_team, away_team')
+    .select('id, fd_id, home_team, away_team, group_name')
     .eq('status', 'scheduled')
 
   // Single API call — fetch all WC2026 matches at once
@@ -109,6 +109,7 @@ export async function GET(req: NextRequest) {
     const homeTeam = fdMatch.homeTeam?.name
     const awayTeam = fdMatch.awayTeam?.name
     const venue = fdMatch.venue ?? null
+    const groupName = fdMatch.group ?? null
     const updates: Record<string, any> = {}
 
     if (homeTeam && awayTeam && (homeTeam !== match.home_team || awayTeam !== match.away_team)) {
@@ -116,6 +117,7 @@ export async function GET(req: NextRequest) {
       updates.away_team = awayTeam
     }
     if (venue && venue !== (match as any).venue) updates.venue = venue
+    if (groupName && groupName !== match.group_name) updates.group_name = groupName
     if (Object.keys(updates).length === 0) continue
 
     await supabaseAdmin.from('matches').update(updates).eq('id', match.id)

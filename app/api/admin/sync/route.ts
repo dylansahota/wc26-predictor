@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
   // Fetch all scheduled matches from our DB
   const { data: scheduledMatches, error: matchError } = await supabaseAdmin
     .from('matches')
-    .select('*')
+    .select('id, fd_id, home_team, away_team, home_flag, away_flag, home_score, away_score, et_date, stage, group_name, venue, status')
     .eq('status', 'scheduled')
 
   if (matchError) return NextResponse.json({ error: matchError.message }, { status: 500 })
@@ -39,16 +39,18 @@ export async function POST(req: NextRequest) {
     const fdMatch = fdById.get(match.fd_id)
     if (!fdMatch) continue
 
-    // Update team names, venue if changed
+    // Update team names, venue, group_name if changed
     const homeTeam = fdMatch.homeTeam?.name
     const awayTeam = fdMatch.awayTeam?.name
     const venue = fdMatch.venue ?? null
+    const groupName = fdMatch.group ?? null
     const updates: Record<string, any> = {}
     if (homeTeam && awayTeam && (homeTeam !== match.home_team || awayTeam !== match.away_team)) {
       updates.home_team = homeTeam
       updates.away_team = awayTeam
     }
     if (venue && venue !== (match as any).venue) updates.venue = venue
+    if (groupName && groupName !== match.group_name) updates.group_name = groupName
     if (Object.keys(updates).length > 0) {
       await supabaseAdmin.from('matches').update(updates).eq('id', match.id)
       if (updates.home_team) teamUpdates++
