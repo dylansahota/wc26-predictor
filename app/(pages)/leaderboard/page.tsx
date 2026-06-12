@@ -24,12 +24,6 @@ interface PlayerStanding {
   series: { date: string; points: number }[]
 }
 
-const DASH_PATTERNS = [
-  [],
-  [6, 3],
-  [3, 3],
-  [10, 3, 3, 3],
-]
 
 export default function LeaderboardPage() {
   const router = useRouter()
@@ -75,7 +69,6 @@ export default function LeaderboardPage() {
       borderWidth: 2,
       pointRadius: 3,
       tension: 0.2,
-      borderDash: DASH_PATTERNS[i % DASH_PATTERNS.length],
     })),
   }
 
@@ -193,12 +186,7 @@ export default function LeaderboardPage() {
               {standings.map((player, i) => (
                 <div key={player.id} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <svg width="20" height="10">
-                    <line
-                      x1="0" y1="5" x2="20" y2="5"
-                      stroke={player.colour}
-                      strokeWidth="2"
-                      strokeDasharray={DASH_PATTERNS[i % DASH_PATTERNS.length].join(',')}
-                    />
+                    <line x1="0" y1="5" x2="20" y2="5" stroke={player.colour} strokeWidth="2" />
                   </svg>
                   <span style={{ fontSize: '12px', color: '#9ca3af' }}>{player.name}</span>
                 </div>

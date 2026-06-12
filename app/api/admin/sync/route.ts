@@ -7,16 +7,57 @@ export const dynamic = 'force-dynamic'
 const FD_API_KEY = process.env.FOOTBALL_DATA_API_KEY!
 const FD_BASE = 'https://api.football-data.org/v4'
 
+// Rebuild daily_scores for a given et_date from scratch.
+// Sums all non-null prediction points across all finished matches that day.
+// Safe to call multiple times — always produces the correct result.
+export async function recalcDailyScores(etDate: string) {
+  const { data: dayMatches } = await supabaseAdmin
+    .from('matches')
+    .select('id')
+    .eq('et_date', etDate)
+    .eq('status', 'finished')
+
+  const matchIds = (dayMatches ?? []).map(m => m.id)
+  if (matchIds.length === 0) return
+
+  const { data: preds } = await supabaseAdmin
+    .from('predictions')
+    .select('player_id, points')
+    .in('match_id', matchIds)
+    .not('points', 'is', null)
+
+  const totals: Record<number, number> = {}
+  for (const p of preds ?? []) {
+    totals[p.player_id] = (totals[p.player_id] ?? 0) + p.points
+  }
+
+  for (const [playerIdStr, points] of Object.entries(totals)) {
+    const playerId = Number(playerIdStr)
+    const { data: existing } = await supabaseAdmin
+      .from('daily_scores')
+      .select('id')
+      .eq('player_id', playerId)
+      .eq('et_date', etDate)
+      .single()
+
+    if (existing) {
+      await supabaseAdmin.from('daily_scores').update({ points }).eq('id', existing.id)
+    } else {
+      await supabaseAdmin.from('daily_scores').insert({ player_id: playerId, et_date: etDate, points })
+    }
+  }
+}
+
 export async function POST(req: NextRequest) {
   const session = await getSession()
   if (!session) return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
   if (session.name !== 'Dyl') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  // Fetch all scheduled matches from our DB
+  // Fetch scheduled matches + any finished ones with null scores (stuck mid-sync)
   const { data: scheduledMatches, error: matchError } = await supabaseAdmin
     .from('matches')
     .select('id, fd_id, home_team, away_team, home_flag, away_flag, home_score, away_score, et_date, stage, group_name, venue, status')
-    .eq('status', 'scheduled')
+    .or('status.eq.scheduled,home_score.is.null')
 
   if (matchError) return NextResponse.json({ error: matchError.message }, { status: 500 })
 
@@ -73,30 +114,12 @@ export async function POST(req: NextRequest) {
       .eq('match_id', match.id)
 
     for (const pred of predictions ?? []) {
-      const points = pred.home_score === homeScore && pred.away_score === awayScore ? 1 : 0
-      await supabaseAdmin.from('predictions').update({ points }).eq('id', pred.id)
-
-      // Derive the ET date for this match
-      const etDate = match.et_date
-
-      const { data: existing } = await supabaseAdmin
-        .from('daily_scores')
-        .select('id, points')
-        .eq('player_id', pred.player_id)
-        .eq('et_date', etDate)
-        .single()
-
-      if (existing) {
-        await supabaseAdmin
-          .from('daily_scores')
-          .update({ points: existing.points + points })
-          .eq('id', existing.id)
-      } else {
-        await supabaseAdmin
-          .from('daily_scores')
-          .insert({ player_id: pred.player_id, et_date: etDate, points })
-      }
+      const newPoints = pred.home_score === homeScore && pred.away_score === awayScore ? 1 : 0
+      await supabaseAdmin.from('predictions').update({ points: newPoints }).eq('id', pred.id)
     }
+
+    // Recalculate daily_scores for this date from scratch based on all scored predictions
+    await recalcDailyScores(match.et_date)
 
     scored++
   }

@@ -15,7 +15,9 @@ export default function AdminPage() {
   const [playerName, setPlayerName] = useState('')
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
+  const [recalcing, setRecalcing] = useState(false)
   const [result, setResult] = useState<SyncResult | null>(null)
+  const [recalcResult, setRecalcResult] = useState<{ recalculated: number; dates: string[] } | null>(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -44,6 +46,20 @@ export default function AdminPage() {
       setResult(data)
     }
     setSyncing(false)
+  }
+
+  async function handleRecalc() {
+    setRecalcing(true)
+    setRecalcResult(null)
+    setError('')
+    const res = await fetch('/api/admin/recalc', { method: 'POST' })
+    const data = await res.json()
+    if (!res.ok) {
+      setError(data.error ?? 'Recalc failed')
+    } else {
+      setRecalcResult(data)
+    }
+    setRecalcing(false)
   }
 
   if (loading) {
@@ -125,6 +141,51 @@ export default function AdminPage() {
 
           {error && (
             <div style={{ marginTop: '12px', fontSize: '13px', color: '#ef4444' }}>{error}</div>
+          )}
+        </div>
+
+        {/* Recalculate scores card */}
+        <div style={{
+          background: '#181c24',
+          border: '0.5px solid #2a2f3d',
+          borderRadius: '12px',
+          padding: '16px',
+          marginBottom: '12px',
+        }}>
+          <div style={{ fontSize: '14px', fontWeight: 500, marginBottom: '4px' }}>Recalculate leaderboard</div>
+          <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '14px' }}>
+            Rebuilds daily scores from scratch based on all scored predictions. Use this if the leaderboard looks wrong after a sync.
+          </div>
+
+          <button
+            onClick={handleRecalc}
+            disabled={recalcing}
+            style={{
+              width: '100%', padding: '12px',
+              background: 'none',
+              border: `0.5px solid ${recalcing ? '#4ade80' : '#374151'}`,
+              borderRadius: '8px',
+              color: recalcing ? '#4ade80' : '#9ca3af',
+              fontSize: '13px', fontWeight: 500,
+              cursor: recalcing ? 'not-allowed' : 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            {recalcing ? 'Recalculating...' : 'Recalculate scores'}
+          </button>
+
+          {recalcResult && (
+            <div style={{
+              marginTop: '12px', background: '#0f1117',
+              border: '0.5px solid #2a2f3d', borderRadius: '8px', padding: '12px 14px',
+            }}>
+              <div style={{ fontSize: '11px', color: '#4ade80', fontWeight: 600, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                ✓ Recalc complete
+              </div>
+              <div style={{ fontSize: '13px', color: '#9ca3af' }}>
+                Rebuilt scores for {recalcResult.recalculated} day{recalcResult.recalculated !== 1 ? 's' : ''}: {recalcResult.dates.join(', ')}
+              </div>
+            </div>
           )}
         </div>
 
