@@ -15,11 +15,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorised' }, { status: 401 })
   }
 
-  // Get yesterday's ET date
+  // Game-day boundary: UTC-6 fixed offset — matches the et_date values in the DB.
   const now = new Date()
-  const etNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }))
-  etNow.setDate(etNow.getDate() - 1)
-  const etDate = etNow.toISOString().split('T')[0]
+  const ydStr = new Date(now.getTime() - 86400000).toLocaleDateString('en-US', {
+    timeZone: 'Etc/GMT+6', year: 'numeric', month: '2-digit', day: '2-digit',
+  })
+  const [ym, yd, yy] = ydStr.split('/')
+  const etDate = `${yy}-${ym}-${yd}`
 
   // Fetch our DB matches for yesterday
   const { data: dbMatches, error: matchError } = await supabaseAdmin

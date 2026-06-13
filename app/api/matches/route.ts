@@ -12,11 +12,13 @@ export async function GET(_req: NextRequest) {
 
   const now = new Date()
 
-  // Compute today's ET date
-  const etNow = now.toLocaleDateString('en-US', {
-    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+  // Game-day boundary: UTC-6 fixed offset (no DST).
+  // Keeps late-night games (e.g. 04:00 UTC = 5am BST) on the same day as the earlier
+  // games they're scheduled alongside, rather than rolling over to the next calendar day.
+  const gameDayStr = now.toLocaleDateString('en-US', {
+    timeZone: 'Etc/GMT+6', year: 'numeric', month: '2-digit', day: '2-digit',
   })
-  const [em, ed, ey] = etNow.split('/')
+  const [em, ed, ey] = gameDayStr.split('/')
   let date = `${ey}-${em}-${ed}`
 
   // Fetch today's scheduled matches to check deadline
