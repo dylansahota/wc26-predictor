@@ -24,7 +24,13 @@ export default function AdminPage() {
   const [bracketRefreshing, setBracketRefreshing] = useState(false)
   const [result, setResult] = useState<SyncResult | null>(null)
   const [recalcResult, setRecalcResult] = useState<{ recalculated: number; dates: string[] } | null>(null)
-  const [bracketResult, setBracketResult] = useState<{ completedGroups: string[]; incompleteGroups: string[]; slotsUpdated: number } | null>(null)
+  const [bracketResult, setBracketResult] = useState<{
+    completedGroups: string[]
+    incompleteGroups: string[]
+    groupFinishedCounts: Record<string, number>
+    slotsUpdated: number
+    slots: Array<{ index: number; matchId: number; homeRoute: string; awayRoute: string; curHome: string | null; curAway: string | null; newHome: string | null; newAway: string | null; action: string }>
+  } | null>(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -257,17 +263,25 @@ export default function AdminPage() {
               marginTop: '12px', background: '#0f1117',
               border: '0.5px solid #2a2f3d', borderRadius: '8px', padding: '12px 14px',
             }}>
-              <div style={{ fontSize: '11px', color: '#4ade80', fontWeight: 600, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
-                ✓ Bracket refreshed
+              <div style={{ fontSize: '11px', color: '#4ade80', fontWeight: 600, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                ✓ Bracket refreshed — {bracketResult.slotsUpdated} slot{bracketResult.slotsUpdated !== 1 ? 's' : ''} updated
               </div>
-              <div style={{ fontSize: '13px', color: '#9ca3af', lineHeight: '1.6' }}>
-                {bracketResult.slotsUpdated} slot{bracketResult.slotsUpdated !== 1 ? 's' : ''} updated
-                {bracketResult.completedGroups.length > 0 && (
-                  <> · Complete: {bracketResult.completedGroups.join(', ')}</>
-                )}
-                {bracketResult.incompleteGroups.length > 0 && (
-                  <> · In progress: {bracketResult.incompleteGroups.join(', ')}</>
-                )}
+              {bracketResult.completedGroups.length > 0 && (
+                <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '4px' }}>
+                  Complete ({bracketResult.completedGroups.length}): {bracketResult.completedGroups.map(g => `${g}(${bracketResult.groupFinishedCounts[g] ?? 0}/6)`).join(' ')}
+                </div>
+              )}
+              {bracketResult.incompleteGroups.length > 0 && (
+                <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px' }}>
+                  In progress: {bracketResult.incompleteGroups.map(g => `${g}(${bracketResult.groupFinishedCounts[g] ?? 0}/6)`).join(' ')}
+                </div>
+              )}
+              <div style={{ fontSize: '11px', color: '#4b5563', fontFamily: 'monospace', lineHeight: '1.8', overflowX: 'auto' }}>
+                {bracketResult.slots.map(s => (
+                  <div key={s.index} style={{ color: s.action === 'updated' ? '#4ade80' : s.action === 'error' ? '#ef4444' : '#4b5563' }}>
+                    [{s.index}] {s.homeRoute} | {s.curHome ?? 'null'} → {s.newHome ?? 'null'} ({s.action})
+                  </div>
+                ))}
               </div>
             </div>
           )}

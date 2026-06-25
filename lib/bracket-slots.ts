@@ -19,12 +19,27 @@ interface GroupResult {
   runnerUp: { name: string; flag: string } | null
   thirdPlace: StandingEntry | null
   complete: boolean
+  finishedCount: number
+}
+
+export interface SlotDiag {
+  index: number
+  matchId: number
+  homeRoute: string
+  awayRoute: string
+  curHome: string | null
+  curAway: string | null
+  newHome: string | null
+  newAway: string | null
+  action: 'updated' | 'skipped' | 'no-route' | 'error'
 }
 
 export interface BracketSlotDiagnostics {
-  completedGroups: string[]       // letters of groups with all 4 teams at played >= 3
-  incompleteGroups: string[]      // letters still in progress
+  completedGroups: string[]
+  incompleteGroups: string[]
+  groupFinishedCounts: Record<string, number>
   slotsUpdated: number
+  slots: SlotDiag[]
 }
 
 const WINNER_RE = /^Winner Group ([A-L])$/
@@ -66,20 +81,24 @@ function resolveRoute(
   return null
 }
 
-// Called by admin sync and cron after scoring.
-// Reads group standings from our own DB and writes confirmed qualifiers into
-// LAST_32 match slots. Clears any premature football-data.org team names for
-// groups that aren't complete yet. Returns diagnostics for the admin UI.
+// Called by admin sync, cron, and the dedicated bracket-slots endpoint.
+// Uses the same completeness logic as the sweepstake: a group is complete when
+// all 6 of its GROUP_STAGE matches have status='finished'.
+// Clears any premature team names (e.g. from football-data.org pre-population)
+// by writing null for slots whose group isn't yet complete.
 export async function populateGroupQualifiers(): Promise<BracketSlotDiagnostics> {
+  // Fetch all GROUP_STAGE matches with their status and scores
   const { data: groupMatches, error } = await supabaseAdmin
     .from('matches')
-    .select('group_name, home_team, away_team, home_flag, away_flag, home_score, away_score')
+    .select('group_name, home_team, away_team, home_flag, away_flag, home_score, away_score, status')
     .eq('stage', 'GROUP_STAGE')
     .not('group_name', 'is', null)
 
   if (error) throw new Error(error.message)
 
+  // Build per-group standings from finished matches only (sweepstake approach)
   const groupStandings = new Map<string, Map<string, StandingEntry>>()
+  const groupFinished = new Map<string, number>()
 
   for (const match of groupMatches ?? []) {
     const letter = (match.group_name as string).replace('GROUP_', '')
@@ -87,6 +106,7 @@ export async function populateGroupQualifiers(): Promise<BracketSlotDiagnostics>
     if (!groupStandings.has(letter)) groupStandings.set(letter, new Map())
     const s = groupStandings.get(letter)!
 
+    // Ensure all team names are registered in the standings table
     for (const [name, flag] of [
       [match.home_team as string, match.home_flag as string],
       [match.away_team as string, match.away_flag as string],
@@ -96,9 +116,9 @@ export async function populateGroupQualifiers(): Promise<BracketSlotDiagnostics>
       }
     }
 
-    // Count as played if both scores are present — handles stuck matches where
-    // status is still 'scheduled' but the game has actually finished
-    if (match.home_score == null || match.away_score == null) continue
+    // Only count matches that are genuinely finished (status='finished')
+    // This is the same approach used by the sweepstake
+    if (match.status !== 'finished' || match.home_score == null || match.away_score == null) continue
 
     const hs = match.home_score as number
     const as_ = match.away_score as number
@@ -116,27 +136,35 @@ export async function populateGroupQualifiers(): Promise<BracketSlotDiagnostics>
 
     home.points = home.won * 3 + home.drawn
     away.points = away.won * 3 + away.drawn
+
+    // Count finished matches per group (sweepstake uses >= 6 for completeness)
+    groupFinished.set(letter, (groupFinished.get(letter) ?? 0) + 1)
   }
 
-  // A group is complete when all 4 teams have each played 3 games.
-  // This works even when some matches are stuck on 'scheduled' status but
-  // have real scores — we count 'played' from scores, not from status.
+  // A 4-team group has 6 fixtures — complete when all 6 are finished
   const resultsByGroup = new Map<string, GroupResult>()
   for (const [letter, standings] of groupStandings) {
     const sorted = Array.from(standings.values()).sort(compareStandings)
-    const complete = sorted.length >= 4 && sorted.every(t => t.played >= 3)
+    const finishedCount = groupFinished.get(letter) ?? 0
+    const complete = finishedCount >= 6
+
     resultsByGroup.set(letter, {
       winner: complete && sorted[0] ? { name: sorted[0].teamName, flag: sorted[0].flag } : null,
       runnerUp: complete && sorted[1] ? { name: sorted[1].teamName, flag: sorted[1].flag } : null,
       thirdPlace: complete ? (sorted[2] ?? null) : null,
       complete,
+      finishedCount,
     })
   }
 
   const completedGroups = Array.from(resultsByGroup.entries()).filter(([, r]) => r.complete).map(([l]) => l).sort()
   const incompleteGroups = Array.from(resultsByGroup.entries()).filter(([, r]) => !r.complete).map(([l]) => l).sort()
+  const groupFinishedCounts: Record<string, number> = {}
+  for (const [letter, result] of resultsByGroup) {
+    groupFinishedCounts[letter] = result.finishedCount
+  }
 
-  // Best-third ranking only available once all 12 groups have finished
+  // Best-third ranking only valid once ALL 12 groups are complete
   const allGroupsComplete = resultsByGroup.size >= 12 && completedGroups.length >= 12
 
   const top8BestThird: StandingEntry[] = []
@@ -148,9 +176,10 @@ export async function populateGroupQualifiers(): Promise<BracketSlotDiagnostics>
     top8BestThird.push(...allThird.slice(0, 8))
   }
 
+  // Load all LAST_32 matches ordered by kickoff time — must match BRACKET_ROUTES.R32 order
   const { data: r32Matches, error: r32Error } = await supabaseAdmin
     .from('matches')
-    .select('id, home_team, away_team')
+    .select('id, home_team, away_team, home_flag, away_flag')
     .eq('stage', 'LAST_32')
     .order('kickoff_utc', { ascending: true })
 
@@ -159,39 +188,62 @@ export async function populateGroupQualifiers(): Promise<BracketSlotDiagnostics>
   const r32Routes = BRACKET_ROUTES.R32 ?? []
   const usedBestThird = new Set<string>()
   let slotsUpdated = 0
+  const slots: SlotDiag[] = []
 
   for (let i = 0; i < (r32Matches ?? []).length; i++) {
     const match = r32Matches![i]
     const route = r32Routes[i]
-    if (!route) continue
 
     const curHome = match.home_team || null
     const curAway = match.away_team || null
 
-    // Always resolve — returns null when group isn't complete, clearing any premature value
+    if (!route) {
+      slots.push({ index: i, matchId: match.id, homeRoute: '(no route)', awayRoute: '(no route)', curHome, curAway, newHome: null, newAway: null, action: 'no-route' })
+      continue
+    }
+
+    // Resolve correct team — null means group is not yet complete
     const resolvedHome = resolveRoute(route.homeRoute, resultsByGroup, top8BestThird, usedBestThird, allGroupsComplete)
     const resolvedAway = resolveRoute(route.awayRoute, resultsByGroup, top8BestThird, usedBestThird, allGroupsComplete)
 
     const newHome = resolvedHome?.name ?? null
     const newAway = resolvedAway?.name ?? null
 
-    if (newHome === curHome && newAway === curAway) continue
-
-    const updates: Record<string, string | null> = {}
-    if (newHome !== curHome) {
-      updates.home_team = newHome
-      if (newHome && resolvedHome?.flag) updates.home_flag = resolvedHome.flag
+    const diag: SlotDiag = {
+      index: i,
+      matchId: match.id,
+      homeRoute: route.homeRoute,
+      awayRoute: route.awayRoute,
+      curHome,
+      curAway,
+      newHome,
+      newAway,
+      action: 'skipped',
     }
-    if (newAway !== curAway) {
-      updates.away_team = newAway
-      if (newAway && resolvedAway?.flag) updates.away_flag = resolvedAway.flag
+
+    if (newHome === curHome && newAway === curAway) {
+      slots.push(diag)
+      continue
     }
 
-    if (Object.keys(updates).length === 0) continue
+    // Always write the full correct state (clears premature values like Germany)
+    const updates: Record<string, string | null> = { home_team: newHome, away_team: newAway }
+    if (newHome && resolvedHome?.flag) updates.home_flag = resolvedHome.flag
+    else if (!newHome) updates.home_flag = null
+    if (newAway && resolvedAway?.flag) updates.away_flag = resolvedAway.flag
+    else if (!newAway) updates.away_flag = null
 
-    await supabaseAdmin.from('matches').update(updates).eq('id', match.id)
+    const { error: updateError } = await supabaseAdmin.from('matches').update(updates).eq('id', match.id)
+    if (updateError) {
+      diag.action = 'error'
+      slots.push(diag)
+      continue
+    }
+
+    diag.action = 'updated'
+    slots.push(diag)
     slotsUpdated++
   }
 
-  return { completedGroups, incompleteGroups, slotsUpdated }
+  return { completedGroups, incompleteGroups, groupFinishedCounts, slotsUpdated, slots }
 }
