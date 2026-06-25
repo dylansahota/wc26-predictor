@@ -29,7 +29,7 @@ export default function AdminPage() {
     incompleteGroups: string[]
     groupFinishedCounts: Record<string, number>
     slotsUpdated: number
-    slots: Array<{ index: number; matchId: number; homeRoute: string; awayRoute: string; curHome: string | null; curAway: string | null; newHome: string | null; newAway: string | null; action: string }>
+    slots: Array<{ index: number; matchId: number; homeRoute: string; awayRoute: string; curHome: string | null; curAway: string | null; newHome: string | null; newAway: string | null; action: string; errorMsg?: string }>
   } | null>(null)
   const [error, setError] = useState('')
 
@@ -279,7 +279,7 @@ export default function AdminPage() {
               <div style={{ fontSize: '11px', color: '#4b5563', fontFamily: 'monospace', lineHeight: '1.8', overflowX: 'auto' }}>
                 {bracketResult.slots.map(s => (
                   <div key={s.index} style={{ color: s.action === 'updated' ? '#4ade80' : s.action === 'error' ? '#ef4444' : '#4b5563' }}>
-                    [{s.index}] {s.homeRoute} | {s.curHome ?? 'null'} → {s.newHome ?? 'null'} ({s.action})
+                    [{s.index}] {s.homeRoute} | {s.curHome ?? 'null'} → {s.newHome ?? 'null'} ({s.action}{s.errorMsg ? `: ${s.errorMsg}` : ''})
                   </div>
                 ))}
               </div>

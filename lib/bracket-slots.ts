@@ -32,6 +32,7 @@ export interface SlotDiag {
   newHome: string | null
   newAway: string | null
   action: 'updated' | 'skipped' | 'no-route' | 'error'
+  errorMsg?: string
 }
 
 export interface BracketSlotDiagnostics {
@@ -236,6 +237,7 @@ export async function populateGroupQualifiers(): Promise<BracketSlotDiagnostics>
     const { error: updateError } = await supabaseAdmin.from('matches').update(updates).eq('id', match.id)
     if (updateError) {
       diag.action = 'error'
+      diag.errorMsg = updateError.message
       slots.push(diag)
       continue
     }
