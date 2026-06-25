@@ -130,11 +130,13 @@ export async function POST(req: NextRequest) {
   }
 
   // After scoring, fill LAST_32 slots from any newly completed groups
-  try { await populateGroupQualifiers() } catch (e) { console.error('populateGroupQualifiers failed:', e) }
+  let bracketDiag = { completedGroups: [] as string[], incompleteGroups: [] as string[], slotsUpdated: 0 }
+  try { bracketDiag = await populateGroupQualifiers() } catch (e) { console.error('populateGroupQualifiers failed:', e) }
 
   return NextResponse.json({
     matchesChecked: scheduledMatches?.length ?? 0,
     scored,
     teamUpdates,
+    bracketDiag,
   })
 }

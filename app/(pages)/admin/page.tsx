@@ -8,6 +8,11 @@ interface SyncResult {
   matchesChecked: number
   scored: number
   teamUpdates: number
+  bracketDiag: {
+    completedGroups: string[]
+    incompleteGroups: string[]
+    slotsUpdated: number
+  }
 }
 
 export default function AdminPage() {
@@ -124,7 +129,7 @@ export default function AdminPage() {
               <div style={{ fontSize: '11px', color: '#4ade80', fontWeight: 600, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
                 ✓ Sync complete
               </div>
-              <div style={{ display: 'flex', gap: '16px' }}>
+              <div style={{ display: 'flex', gap: '16px', marginBottom: '12px' }}>
                 {[
                   { label: 'Matches checked', value: result.matchesChecked },
                   { label: 'Scored', value: result.scored },
@@ -136,6 +141,23 @@ export default function AdminPage() {
                   </div>
                 ))}
               </div>
+              {result.bracketDiag && (
+                <div style={{ borderTop: '0.5px solid #2a2f3d', paddingTop: '10px' }}>
+                  <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '4px' }}>
+                    Bracket slots updated: <span style={{ color: result.bracketDiag.slotsUpdated > 0 ? '#4ade80' : '#9ca3af' }}>{result.bracketDiag.slotsUpdated}</span>
+                  </div>
+                  {result.bracketDiag.completedGroups.length > 0 && (
+                    <div style={{ fontSize: '11px', color: '#6b7280', marginBottom: '2px' }}>
+                      Complete groups: <span style={{ color: '#4ade80' }}>{result.bracketDiag.completedGroups.join(', ')}</span>
+                    </div>
+                  )}
+                  {result.bracketDiag.incompleteGroups.length > 0 && (
+                    <div style={{ fontSize: '11px', color: '#6b7280' }}>
+                      In progress: <span style={{ color: '#9ca3af' }}>{result.bracketDiag.incompleteGroups.join(', ')}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 

@@ -21,6 +21,12 @@ interface GroupResult {
   complete: boolean
 }
 
+export interface BracketSlotDiagnostics {
+  completedGroups: string[]       // letters of groups with all 4 teams at played >= 3
+  incompleteGroups: string[]      // letters still in progress
+  slotsUpdated: number
+}
+
 const WINNER_RE = /^Winner Group ([A-L])$/
 const RUNNER_UP_RE = /^Runner-up Group ([A-L])$/
 const BEST_THIRD_RE = /^Best 3rd: ([A-L/]+)$/
@@ -61,24 +67,21 @@ function resolveRoute(
 }
 
 // Called by admin sync and cron after scoring.
-// For each complete group, writes the winner/runner-up team name into the
-// corresponding LAST_32 match slots. Only fills empty slots — never overwrites
-// a name that's already confirmed.
-export async function populateGroupQualifiers(): Promise<void> {
+// Reads group standings from our own DB and writes confirmed qualifiers into
+// LAST_32 match slots. Clears any premature football-data.org team names for
+// groups that aren't complete yet. Returns diagnostics for the admin UI.
+export async function populateGroupQualifiers(): Promise<BracketSlotDiagnostics> {
   const { data: groupMatches, error } = await supabaseAdmin
     .from('matches')
-    .select('group_name, home_team, away_team, home_flag, away_flag, home_score, away_score, status')
+    .select('group_name, home_team, away_team, home_flag, away_flag, home_score, away_score')
     .eq('stage', 'GROUP_STAGE')
     .not('group_name', 'is', null)
 
   if (error) throw new Error(error.message)
 
-  // Build per-group standings
   const groupStandings = new Map<string, Map<string, StandingEntry>>()
-  const groupFinished = new Map<string, number>()
 
   for (const match of groupMatches ?? []) {
-    // group_name stored as 'GROUP_A' — extract letter 'A'
     const letter = (match.group_name as string).replace('GROUP_', '')
 
     if (!groupStandings.has(letter)) groupStandings.set(letter, new Map())
@@ -113,15 +116,15 @@ export async function populateGroupQualifiers(): Promise<void> {
 
     home.points = home.won * 3 + home.drawn
     away.points = away.won * 3 + away.drawn
-
-    groupFinished.set(letter, (groupFinished.get(letter) ?? 0) + 1)
   }
 
-  // A 4-team group is complete after 6 finished matches
+  // A group is complete when all 4 teams have each played 3 games.
+  // This works even when some matches are stuck on 'scheduled' status but
+  // have real scores — we count 'played' from scores, not from status.
   const resultsByGroup = new Map<string, GroupResult>()
   for (const [letter, standings] of groupStandings) {
     const sorted = Array.from(standings.values()).sort(compareStandings)
-    const complete = (groupFinished.get(letter) ?? 0) >= 6
+    const complete = sorted.length >= 4 && sorted.every(t => t.played >= 3)
     resultsByGroup.set(letter, {
       winner: complete && sorted[0] ? { name: sorted[0].teamName, flag: sorted[0].flag } : null,
       runnerUp: complete && sorted[1] ? { name: sorted[1].teamName, flag: sorted[1].flag } : null,
@@ -130,8 +133,11 @@ export async function populateGroupQualifiers(): Promise<void> {
     })
   }
 
+  const completedGroups = Array.from(resultsByGroup.entries()).filter(([, r]) => r.complete).map(([l]) => l).sort()
+  const incompleteGroups = Array.from(resultsByGroup.entries()).filter(([, r]) => !r.complete).map(([l]) => l).sort()
+
   // Best-third ranking only available once all 12 groups have finished
-  const allGroupsComplete = resultsByGroup.size >= 12 && Array.from(resultsByGroup.values()).every(r => r.complete)
+  const allGroupsComplete = resultsByGroup.size >= 12 && completedGroups.length >= 12
 
   const top8BestThird: StandingEntry[] = []
   if (allGroupsComplete) {
@@ -142,7 +148,6 @@ export async function populateGroupQualifiers(): Promise<void> {
     top8BestThird.push(...allThird.slice(0, 8))
   }
 
-  // Load LAST_32 matches in kickoff order (must match BRACKET_ROUTES.R32 order)
   const { data: r32Matches, error: r32Error } = await supabaseAdmin
     .from('matches')
     .select('id, home_team, away_team')
@@ -150,21 +155,20 @@ export async function populateGroupQualifiers(): Promise<void> {
     .order('kickoff_utc', { ascending: true })
 
   if (r32Error) throw new Error(r32Error.message)
-  if (!r32Matches?.length) return
 
   const r32Routes = BRACKET_ROUTES.R32 ?? []
   const usedBestThird = new Set<string>()
+  let slotsUpdated = 0
 
-  for (let i = 0; i < r32Matches.length; i++) {
-    const match = r32Matches[i]
+  for (let i = 0; i < (r32Matches ?? []).length; i++) {
+    const match = r32Matches![i]
     const route = r32Routes[i]
     if (!route) continue
 
     const curHome = match.home_team || null
     const curAway = match.away_team || null
 
-    // Always resolve both slots — resolveRoute returns null if the source group
-    // isn't complete yet, which lets us clear any premature API-written values
+    // Always resolve — returns null when group isn't complete, clearing any premature value
     const resolvedHome = resolveRoute(route.homeRoute, resultsByGroup, top8BestThird, usedBestThird, allGroupsComplete)
     const resolvedAway = resolveRoute(route.awayRoute, resultsByGroup, top8BestThird, usedBestThird, allGroupsComplete)
 
@@ -175,7 +179,7 @@ export async function populateGroupQualifiers(): Promise<void> {
 
     const updates: Record<string, string | null> = {}
     if (newHome !== curHome) {
-      updates.home_team = newHome  // null clears premature football-data.org values
+      updates.home_team = newHome
       if (newHome && resolvedHome?.flag) updates.home_flag = resolvedHome.flag
     }
     if (newAway !== curAway) {
@@ -186,5 +190,8 @@ export async function populateGroupQualifiers(): Promise<void> {
     if (Object.keys(updates).length === 0) continue
 
     await supabaseAdmin.from('matches').update(updates).eq('id', match.id)
+    slotsUpdated++
   }
+
+  return { completedGroups, incompleteGroups, slotsUpdated }
 }
