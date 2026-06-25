@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation'
 const BASE_TABS = [
   { label: 'Predict', path: '/predict' },
   { label: 'Groups', path: '/groups' },
+  { label: 'Bracket', path: '/bracket' },
   { label: 'Leaderboard', path: '/leaderboard' },
   { label: 'History', path: '/history' },
 ]
@@ -69,7 +70,7 @@ export default function NavBar({ playerName }: { playerName: string }) {
               flex: 1,
               padding: '12px 8px',
               textAlign: 'center',
-              fontSize: '13px',
+              fontSize: '12px',
               color: pathname === tab.path ? '#4ade80' : '#6b7280',
               background: 'none',
               border: 'none',

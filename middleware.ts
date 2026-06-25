@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
 
 const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET!)
-const PROTECTED = ['/predict', '/leaderboard', '/history', '/admin', '/groups']
+const PROTECTED = ['/predict', '/leaderboard', '/history', '/admin', '/groups', '/bracket']
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
@@ -18,5 +18,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/predict', '/leaderboard', '/history', '/admin', '/groups'],
+  matcher: ['/predict', '/leaderboard', '/history', '/admin', '/groups', '/bracket'],
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
+import { populateGroupQualifiers } from '@/lib/bracket-slots'
 
 export const dynamic = 'force-dynamic'
 
@@ -114,10 +115,9 @@ export async function GET(req: NextRequest) {
     const groupName = fdMatch.group ?? null
     const updates: Record<string, any> = {}
 
-    if (homeTeam && awayTeam && (homeTeam !== match.home_team || awayTeam !== match.away_team)) {
-      updates.home_team = homeTeam
-      updates.away_team = awayTeam
-    }
+    // Update team names individually — knockout teams get confirmed one at a time
+    if (homeTeam && homeTeam !== match.home_team) updates.home_team = homeTeam
+    if (awayTeam && awayTeam !== match.away_team) updates.away_team = awayTeam
     if (venue && venue !== (match as any).venue) updates.venue = venue
     if (groupName && groupName !== match.group_name) updates.group_name = groupName
     if (Object.keys(updates).length === 0) continue
@@ -125,6 +125,9 @@ export async function GET(req: NextRequest) {
     await supabaseAdmin.from('matches').update(updates).eq('id', match.id)
     if (updates.home_team) teamUpdates.push(match.id)
   }
+
+  // After scoring, fill LAST_32 slots from any newly completed groups
+  await populateGroupQualifiers()
 
   return NextResponse.json({ scored, teamUpdates, etDate })
 }
