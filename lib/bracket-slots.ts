@@ -195,11 +195,12 @@ export async function populateGroupQualifiers(): Promise<BracketSlotDiagnostics>
     const match = r32Matches![i]
     const route = r32Routes[i]
 
-    const curHome = match.home_team || null
-    const curAway = match.away_team || null
+    // Use actual DB strings for comparison (home_team is NOT NULL, '' means TBD)
+    const curHomeActual = (match.home_team as string) ?? ''
+    const curAwayActual = (match.away_team as string) ?? ''
 
     if (!route) {
-      slots.push({ index: i, matchId: match.id, homeRoute: '(no route)', awayRoute: '(no route)', curHome, curAway, newHome: null, newAway: null, action: 'no-route' })
+      slots.push({ index: i, matchId: match.id, homeRoute: '(no route)', awayRoute: '(no route)', curHome: curHomeActual || null, curAway: curAwayActual || null, newHome: null, newAway: null, action: 'no-route' })
       continue
     }
 
@@ -207,32 +208,40 @@ export async function populateGroupQualifiers(): Promise<BracketSlotDiagnostics>
     const resolvedHome = resolveRoute(route.homeRoute, resultsByGroup, top8BestThird, usedBestThird, allGroupsComplete)
     const resolvedAway = resolveRoute(route.awayRoute, resultsByGroup, top8BestThird, usedBestThird, allGroupsComplete)
 
-    const newHome = resolvedHome?.name ?? null
-    const newAway = resolvedAway?.name ?? null
+    // home_team/away_team are NOT NULL in the DB — use '' as TBD placeholder
+    const writeHome = resolvedHome?.name ?? ''
+    const writeAway = resolvedAway?.name ?? ''
 
     const diag: SlotDiag = {
       index: i,
       matchId: match.id,
       homeRoute: route.homeRoute,
       awayRoute: route.awayRoute,
-      curHome,
-      curAway,
-      newHome,
-      newAway,
+      curHome: curHomeActual || null,
+      curAway: curAwayActual || null,
+      newHome: resolvedHome?.name ?? null,
+      newAway: resolvedAway?.name ?? null,
       action: 'skipped',
     }
 
-    if (newHome === curHome && newAway === curAway) {
+    const needsHomeUpdate = curHomeActual !== writeHome
+    const needsAwayUpdate = curAwayActual !== writeAway
+
+    if (!needsHomeUpdate && !needsAwayUpdate) {
       slots.push(diag)
       continue
     }
 
-    // Always write the full correct state (clears premature values like Germany)
-    const updates: Record<string, string | null> = { home_team: newHome, away_team: newAway }
-    if (newHome && resolvedHome?.flag) updates.home_flag = resolvedHome.flag
-    else if (!newHome) updates.home_flag = null
-    if (newAway && resolvedAway?.flag) updates.away_flag = resolvedAway.flag
-    else if (!newAway) updates.away_flag = null
+    // Only include fields that actually changed
+    const updates: Record<string, string> = {}
+    if (needsHomeUpdate) {
+      updates.home_team = writeHome
+      updates.home_flag = resolvedHome?.flag ?? ''
+    }
+    if (needsAwayUpdate) {
+      updates.away_team = writeAway
+      updates.away_flag = resolvedAway?.flag ?? ''
+    }
 
     const { error: updateError } = await supabaseAdmin.from('matches').update(updates).eq('id', match.id)
     if (updateError) {
