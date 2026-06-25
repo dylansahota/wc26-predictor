@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
   // Also fetch all scheduled matches so we can refresh knockout team names + group_name
   const { data: scheduledMatches } = await supabaseAdmin
     .from('matches')
-    .select('id, fd_id, home_team, away_team, group_name')
+    .select('id, fd_id, stage, home_team, away_team, group_name')
     .eq('status', 'scheduled')
 
   // Single API call — fetch all WC2026 matches at once
@@ -115,9 +115,12 @@ export async function GET(req: NextRequest) {
     const groupName = fdMatch.group ?? null
     const updates: Record<string, any> = {}
 
-    // Update team names individually — knockout teams get confirmed one at a time
-    if (homeTeam && homeTeam !== match.home_team) updates.home_team = homeTeam
-    if (awayTeam && awayTeam !== match.away_team) updates.away_team = awayTeam
+    // LAST_32 slots are owned by populateGroupQualifiers() — skip football-data.org
+    // team names there to avoid writing premature values
+    if (match.stage !== 'LAST_32') {
+      if (homeTeam && homeTeam !== match.home_team) updates.home_team = homeTeam
+      if (awayTeam && awayTeam !== match.away_team) updates.away_team = awayTeam
+    }
     if (venue && venue !== (match as any).venue) updates.venue = venue
     if (groupName && groupName !== match.group_name) updates.group_name = groupName
     if (Object.keys(updates).length === 0) continue
@@ -127,7 +130,7 @@ export async function GET(req: NextRequest) {
   }
 
   // After scoring, fill LAST_32 slots from any newly completed groups
-  await populateGroupQualifiers()
+  try { await populateGroupQualifiers() } catch (e) { console.error('populateGroupQualifiers failed:', e) }
 
   return NextResponse.json({ scored, teamUpdates, etDate })
 }

@@ -87,9 +87,14 @@ export async function POST(req: NextRequest) {
     const venue = fdMatch.venue ?? null
     const groupName = fdMatch.group ?? null
     const updates: Record<string, any> = {}
-    // Update team names individually — knockout teams get confirmed one at a time
-    if (homeTeam && homeTeam !== match.home_team) updates.home_team = homeTeam
-    if (awayTeam && awayTeam !== match.away_team) updates.away_team = awayTeam
+    // LAST_32 slots are managed entirely by populateGroupQualifiers() based on our
+    // own DB standings — skip football-data.org team names for R32 to avoid
+    // writing premature values for mathematically-qualified-but-not-done teams.
+    // For LAST_16 and beyond, football-data.org is reliable (set after R32 results).
+    if (match.stage !== 'LAST_32') {
+      if (homeTeam && homeTeam !== match.home_team) updates.home_team = homeTeam
+      if (awayTeam && awayTeam !== match.away_team) updates.away_team = awayTeam
+    }
     if (venue && venue !== (match as any).venue) updates.venue = venue
     if (groupName && groupName !== match.group_name) updates.group_name = groupName
     if (Object.keys(updates).length > 0) {
@@ -125,7 +130,7 @@ export async function POST(req: NextRequest) {
   }
 
   // After scoring, fill LAST_32 slots from any newly completed groups
-  await populateGroupQualifiers()
+  try { await populateGroupQualifiers() } catch (e) { console.error('populateGroupQualifiers failed:', e) }
 
   return NextResponse.json({
     matchesChecked: scheduledMatches?.length ?? 0,

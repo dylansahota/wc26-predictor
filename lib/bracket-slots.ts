@@ -93,7 +93,9 @@ export async function populateGroupQualifiers(): Promise<void> {
       }
     }
 
-    if (match.status !== 'finished' || match.home_score == null || match.away_score == null) continue
+    // Count as played if both scores are present — handles stuck matches where
+    // status is still 'scheduled' but the game has actually finished
+    if (match.home_score == null || match.away_score == null) continue
 
     const hs = match.home_score as number
     const as_ = match.away_score as number
@@ -161,21 +163,27 @@ export async function populateGroupQualifiers(): Promise<void> {
     const curHome = match.home_team || null
     const curAway = match.away_team || null
 
-    // Only fill empty slots — never overwrite a name already confirmed
-    const resolvedHome = curHome ? null : resolveRoute(route.homeRoute, resultsByGroup, top8BestThird, usedBestThird, allGroupsComplete)
-    const resolvedAway = curAway ? null : resolveRoute(route.awayRoute, resultsByGroup, top8BestThird, usedBestThird, allGroupsComplete)
+    // Always resolve both slots — resolveRoute returns null if the source group
+    // isn't complete yet, which lets us clear any premature API-written values
+    const resolvedHome = resolveRoute(route.homeRoute, resultsByGroup, top8BestThird, usedBestThird, allGroupsComplete)
+    const resolvedAway = resolveRoute(route.awayRoute, resultsByGroup, top8BestThird, usedBestThird, allGroupsComplete)
 
-    if (!resolvedHome && !resolvedAway) continue
+    const newHome = resolvedHome?.name ?? null
+    const newAway = resolvedAway?.name ?? null
 
-    const updates: Record<string, string> = {}
-    if (resolvedHome) {
-      updates.home_team = resolvedHome.name
-      if (resolvedHome.flag) updates.home_flag = resolvedHome.flag
+    if (newHome === curHome && newAway === curAway) continue
+
+    const updates: Record<string, string | null> = {}
+    if (newHome !== curHome) {
+      updates.home_team = newHome  // null clears premature football-data.org values
+      if (newHome && resolvedHome?.flag) updates.home_flag = resolvedHome.flag
     }
-    if (resolvedAway) {
-      updates.away_team = resolvedAway.name
-      if (resolvedAway.flag) updates.away_flag = resolvedAway.flag
+    if (newAway !== curAway) {
+      updates.away_team = newAway
+      if (newAway && resolvedAway?.flag) updates.away_flag = resolvedAway.flag
     }
+
+    if (Object.keys(updates).length === 0) continue
 
     await supabaseAdmin.from('matches').update(updates).eq('id', match.id)
   }
