@@ -21,8 +21,10 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [recalcing, setRecalcing] = useState(false)
+  const [bracketRefreshing, setBracketRefreshing] = useState(false)
   const [result, setResult] = useState<SyncResult | null>(null)
   const [recalcResult, setRecalcResult] = useState<{ recalculated: number; dates: string[] } | null>(null)
+  const [bracketResult, setBracketResult] = useState<{ completedGroups: string[]; incompleteGroups: string[]; slotsUpdated: number } | null>(null)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -51,6 +53,15 @@ export default function AdminPage() {
       setResult(data)
     }
     setSyncing(false)
+  }
+
+  async function handleBracketRefresh() {
+    setBracketRefreshing(true)
+    setBracketResult(null)
+    const res = await fetch('/api/admin/bracket-slots', { method: 'POST' })
+    const data = await res.json()
+    setBracketResult(res.ok ? data : null)
+    setBracketRefreshing(false)
   }
 
   async function handleRecalc() {
@@ -206,6 +217,57 @@ export default function AdminPage() {
               </div>
               <div style={{ fontSize: '13px', color: '#9ca3af' }}>
                 Rebuilt scores for {recalcResult.recalculated} day{recalcResult.recalculated !== 1 ? 's' : ''}: {recalcResult.dates.join(', ')}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Bracket slots card */}
+        <div style={{
+          background: '#181c24',
+          border: '0.5px solid #2a2f3d',
+          borderRadius: '12px',
+          padding: '16px',
+          marginBottom: '12px',
+        }}>
+          <div style={{ fontSize: '14px', fontWeight: 500, marginBottom: '4px' }}>Refresh bracket slots</div>
+          <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '14px' }}>
+            Reads group standings from the DB and writes confirmed qualifiers into Round of 32 slots. Clears any premature team names for incomplete groups.
+          </div>
+
+          <button
+            onClick={handleBracketRefresh}
+            disabled={bracketRefreshing}
+            style={{
+              width: '100%', padding: '12px',
+              background: 'none',
+              border: `0.5px solid ${bracketRefreshing ? '#4ade80' : '#374151'}`,
+              borderRadius: '8px',
+              color: bracketRefreshing ? '#4ade80' : '#9ca3af',
+              fontSize: '13px', fontWeight: 500,
+              cursor: bracketRefreshing ? 'not-allowed' : 'pointer',
+              fontFamily: 'inherit',
+            }}
+          >
+            {bracketRefreshing ? 'Refreshing...' : 'Refresh bracket slots'}
+          </button>
+
+          {bracketResult && (
+            <div style={{
+              marginTop: '12px', background: '#0f1117',
+              border: '0.5px solid #2a2f3d', borderRadius: '8px', padding: '12px 14px',
+            }}>
+              <div style={{ fontSize: '11px', color: '#4ade80', fontWeight: 600, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.6px' }}>
+                ✓ Bracket refreshed
+              </div>
+              <div style={{ fontSize: '13px', color: '#9ca3af', lineHeight: '1.6' }}>
+                {bracketResult.slotsUpdated} slot{bracketResult.slotsUpdated !== 1 ? 's' : ''} updated
+                {bracketResult.completedGroups.length > 0 && (
+                  <> · Complete: {bracketResult.completedGroups.join(', ')}</>
+                )}
+                {bracketResult.incompleteGroups.length > 0 && (
+                  <> · In progress: {bracketResult.incompleteGroups.join(', ')}</>
+                )}
               </div>
             </div>
           )}
